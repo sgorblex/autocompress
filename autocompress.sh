@@ -1,13 +1,13 @@
 #!/bin/bash
-# HandBrake autocompressing script
+# ffmpeg autocompressing script
 # made by Sgorblex
 
-set -o errexit -o pipefail
+set -e
 
 
-function usage {
+usage() {
 echo -e \
-"$0: HandBrakeCLI autocompress script by Sgorblex.
+"$0: ffmpeg autocompress script by Sgorblex.
 
 USAGE:
 \t$0 [OPTION]
@@ -18,9 +18,18 @@ OPTIONS:
 \t--help\t\t\tShow this help"
 }
 
+sizeof() {
+	stat --printf="%s" "$1"
+}
+
+
+tododir=todo
+elaborateddir=elaborated
+originaldir=original
+
 
 OPTS=sh
-LONGOPTS=shutdown,hibernate,help
+LONGOPTS=shutdown,hibernate,help,docrop
 
 PARSED=$(getopt --options=$OPTS --longoptions=$LONGOPTS --name "$0" -- "$@")
 eval set -- "$PARSED"
@@ -45,6 +54,9 @@ do
 				exit 1
 			fi
 			;;
+		--docrop)
+			docrop="true"
+			;;
 		--help)
 			usage
 			exit 0
@@ -58,46 +70,51 @@ done
 
 
 cd $(dirname $0)
-noncompressidir=todo
-compressidir=elaborated
-originaldir=original
-mkdir -p $noncompressidir $compressidir $originaldir
+mkdir -p "$tododir" "$elaborateddir" "$originaldir"
 
-for oldname in $(ls $noncompressidir)
+for oldname in "$tododir"/*
 do
-	newname=${oldname%.*}.mp4
+	oldname="${oldname##*/}"
+	newname="${oldname%.*}.mp4"
 
-	echo -e "Done:\t$(ls $compressidir | wc -l)"
-	echo -e "Remaining:\t$(ls $noncompressidir | wc -l)"
+	echo -e "Done:\t$(ls "$elaborateddir" | wc -l)"
+	echo -e "Remaining:\t$(ls "$tododir" | wc -l)"
 	echo -e "Old name:\t$oldname\nNew name:\t$newname"
 	echo -e "Start:\t$(date +%F_%T)" >> compressing.log
 	echo -e "Old name:\t$oldname\nNew name:\t$newname" >> compressing.log
 
-	echo -n "Handbraking video... " >> compressing.log
+	echo -n "Compressing video... " >> compressing.log
 
-	HandBrakeCLI --preset-import-file handbrake_presets.json -Z "Fast Optimal SAS" -i $noncompressidir/$oldname -o $compressidir/$newname 2>&-
+	if [ -n $docrop ]; then
+		crop=$(ffmpeg -ss 10 -i "$tododir/$oldname" -t 1 -vf cropdetect -f null - 2>&1 | awk '/crop/ { print $NF }' | tail -1)
+		# ffmpeg -y -i "$tododir/$oldname" -preset superfast -c:v libx265 -crf 31 -c:a aac -b:a 64k -ac 1 -r 24 -vf "$crop" "$elaborateddir/$newname"
+		ffmpeg-bar -y -i "$tododir/$oldname" -preset superfast -c:v libx265 -crf 31 -c:a aac -b:a 64k -ac 1 -r 24 -vf "$crop" "$elaborateddir/$newname"
+	else
+		# ffmpeg -y -i "$tododir/$oldname" -preset superfast -c:v libx265 -crf 31 -c:a aac -b:a 64k -ac 1 -r 24 "$elaborateddir/$newname"
+		ffmpeg-bar -y -i "$tododir/$oldname" -preset superfast -c:v libx265 -crf 31 -c:a aac -b:a 64k -ac 1 -r 24 "$elaborateddir/$newname"
+	fi
 
 	echo "Done."
 	echo "Done." >> compressing.log
 
-	oldsize=$(ls -l $noncompressidir/$oldname | cut -d ' ' -f 5)
-	newsize=$(ls -l $compressidir/$newname | cut -d ' ' -f 5)
+	oldsize=$(sizeof "$tododir/$oldname")
+	newsize=$(sizeof "$elaborateddir/$newname")
 	echo -e "Original file size:\t$oldsize B\nNew file size:\t\t$newsize B" >> compressing.log
 
 	if [ $oldsize -le $newsize ]
 	then
 		echo "Compressing was pointless... renaming and moving original with [N], deleting compressed"
 		echo "--> [N] - removing compressed" >> compressing.log
-		ln $noncompressidir/$oldname $originaldir/$oldname
-		mv $noncompressidir/$oldname $compressidir/${newname%.mp4}_[N].mp4
-		rm $compressidir/$newname
+		ln "$tododir/$oldname" "$originaldir/$oldname"
+		mv "$tododir/$oldname" "$elaborateddir/${oldname%.*}_[N].${oldname##*.}"
+		rm "$elaborateddir/$newname"
 	else
 		# echo "Compressing was useful! Renaming the new produced video with [C], deleting original"
 		echo "Compressing was useful! Renaming the new produced video with [C], moving original"
 		echo "--> [C] - removing original" >> compressing.log
-		mv $compressidir/$newname $compressidir/${newname%.mp4}_[C].mp4
-		# rm $noncompressidir/$oldname
-		mv $noncompressidir/$oldname $originaldir/
+		mv "$elaborateddir/$newname" "$elaborateddir/${newname%.mp4}_[C].mp4"
+		# rm "$tododir/$oldname"
+		mv "$tododir/$oldname" "$originaldir"/
 	fi
 
 	echo -e "Work done for $newname\n"
