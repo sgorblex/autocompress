@@ -1,13 +1,11 @@
-#!/bin/bash
-# ffmpeg autocompressing script
-# made by Sgorblex
+#!/bin/sh
+# autocompress.sh
+# ffmpeg autocompressing script by Sgorblex
 
 set -e
 
 
-usage() {
-echo -e \
-"$0: ffmpeg autocompress script by Sgorblex.
+USAGE="$0: ffmpeg autocompress script by Sgorblex.
 
 USAGE:
 \t$0 [OPTION]
@@ -15,8 +13,9 @@ USAGE:
 OPTIONS:
 \t-s, --shutdown\t\tShutdown computer after finishing
 \t-h, --hibernate\t\tHibernate computer after finishing
+\t--docrop\t\tTry to crop black borders (based on the first seconds)
 \t--help\t\t\tShow this help"
-}
+
 
 sizeof() {
 	stat --printf="%s" "$1"
@@ -40,17 +39,17 @@ do
 	case "$1" in
 		-s|--shutdown)
 			shutdown="true"
-			if [[ -n $hibernate ]]
+			if [ -n $hibernate ]
 			then
-				echo "Pick one: shutdown vs hibernate"
+				printf "Pick one: shutdown vs hibernate\n"
 				exit 1
 			fi
 			;;
 		-h|--hibernate)
 			hibernate="true"
-			if [[ -n $shutdown ]]
+			if [ -n $shutdown ]
 			then
-				echo "Pick one: shutdown vs hibernate"
+				printf "Pick one: shutdown vs hibernate\n"
 				exit 1
 			fi
 			;;
@@ -58,7 +57,7 @@ do
 			docrop="true"
 			;;
 		--help)
-			usage
+			printf "%s\n" "$USAGE"
 			exit 0
 			;;
 		--)
@@ -77,13 +76,13 @@ do
 	oldname="${oldname##*/}"
 	newname="${oldname%.*}.mp4"
 
-	echo -e "Done:\t$(ls "$elaborateddir" | wc -l)"
-	echo -e "Remaining:\t$(ls "$tododir" | wc -l)"
-	echo -e "Old name:\t$oldname\nNew name:\t$newname"
-	echo -e "Start:\t$(date +%F_%T)" >> compressing.log
-	echo -e "Old name:\t$oldname\nNew name:\t$newname" >> compressing.log
+	printf "Done:\t%s"	"$(ls "$elaborateddir" | wc -l)"
+	printf "Remaining:\t%s"	"$(ls "$tododir" | wc -l)"
+	printf "Old name:\t%s"	"$oldname\nNew name:\t$newname"
+	printf "Start:\t%s"	"$(date +%F_%T)" >> compressing.log
+	printf "Old name:\t%s\nNew name:\t%s\n"	"$oldname" "$newname" >> compressing.log
 
-	echo -n "Compressing video... " >> compressing.log
+	printf "Compressing video... " >> compressing.log
 
 	if [ -n $docrop ]; then
 		crop=$(ffmpeg -ss 10 -i "$tododir/$oldname" -t 1 -vf cropdetect -f null - 2>&1 | awk '/crop/ { print $NF }' | tail -1)
@@ -94,45 +93,45 @@ do
 		ffmpeg-bar -y -i "$tododir/$oldname" -preset superfast -c:v libx265 -crf 31 -c:a aac -b:a 64k -ac 1 -r 24 "$elaborateddir/$newname"
 	fi
 
-	echo "Done."
-	echo "Done." >> compressing.log
+	printf "Done.\n"
+	printf "Done.\n" >> compressing.log
 
 	oldsize=$(sizeof "$tododir/$oldname")
 	newsize=$(sizeof "$elaborateddir/$newname")
-	echo -e "Original file size:\t$oldsize B\nNew file size:\t\t$newsize B" >> compressing.log
+	printf "Original file size:\t%s B\nNew file size:\t\t%s B\n" "$oldsize" "$newsize" >> compressing.log
 
 	if [ $oldsize -le $newsize ]
 	then
-		echo "Compressing was pointless... renaming and moving original with [N], deleting compressed"
-		echo "--> [N] - removing compressed" >> compressing.log
+		printf "Compressing was pointless... renaming and moving original with [N], deleting compressed\n"
+		printf "--> [N] - removing compressed\n" >> compressing.log
 		ln "$tododir/$oldname" "$originaldir/$oldname"
 		mv "$tododir/$oldname" "$elaborateddir/${oldname%.*}_[N].${oldname##*.}"
 		rm "$elaborateddir/$newname"
 	else
-		# echo "Compressing was useful! Renaming the new produced video with [C], deleting original"
-		echo "Compressing was useful! Renaming the new produced video with [C], moving original"
-		echo "--> [C] - removing original" >> compressing.log
+		# printf "Compressing was useful! Renaming the new produced video with [C], deleting original\n"
+		printf "Compressing was useful! Renaming the new produced video with [C], moving original\n"
+		printf "--> [C] - removing original\n" >> compressing.log
 		mv "$elaborateddir/$newname" "$elaborateddir/${newname%.mp4}_[C].mp4"
 		# rm "$tododir/$oldname"
 		mv "$tododir/$oldname" "$originaldir"/
 	fi
 
-	echo -e "Work done for $newname\n"
-	echo -e "End:\t$(date +%F_%T)\n" >> compressing.log
+	printf "Work done for $newname\n\n"
+	printf "End:\t$(date +%F_%T)\n\n" >> compressing.log
 done
 
-echo "Task complete!"
+printf "Task complete!\n"
 
 
 
-if [[ -n $hibernate ]]
+if [ -n $hibernate ]
 then
-		echo "Hibernating in 10 seconds..."
+		printf "Hibernating in 10 seconds...\n"
 		sleep 10
 		systemctl hibernate
-elif [[ -n $shutdown ]]
+elif [ -n $shutdown ]
 then
-		echo "Shutting down in 10 seconds..."
+		printf "Shutting down in 10 seconds...\n"
 		sleep 10
 		shutdown -P now
 fi
