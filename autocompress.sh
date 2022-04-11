@@ -35,6 +35,7 @@ OPTIONS:
 -r RATE, --rate RATE		Lower the framerate to RATE if convenient
 -d, --delete			Delete original after
 -a ACTION, --after ACTION	Execute ACTION upon completing operation (see below)
+--no-compress			Do not compress nor compare with original (use for e.g. only cropping)
 -h, --help			Show this help
 
 ACTION is one of
@@ -49,7 +50,7 @@ sizeof() {
 
 
 OPTS=o:i:b:ctr:da:h
-LONGOPTS=output:,input:,backup:,crop,mtime,rate:,delete,after,help
+LONGOPTS=output:,input:,backup:,crop,mtime,rate:,delete,after,help,no-compress
 PARSED=$(getopt --options=$OPTS --longoptions=$LONGOPTS --name "$0" -- "$@")
 eval set -- "$PARSED"
 
@@ -83,6 +84,9 @@ do
 		-a|--after)
 			OPT_AFTER="$2"
 			shift
+			;;
+		--no-compress)
+			NO_COMPRESS=true
 			;;
 		-h|--help)
 			printf "%s\n" "$USAGE"
@@ -122,13 +126,14 @@ if [ -n "$OPT_AFTER" ]; then
 fi
 
 
-
-[ -n "$FFMPEG_PRESET" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -preset $FFMPEG_PRESET"
-[ -n "$FFMPEG_VIDEO" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -c:v $FFMPEG_VIDEO"
-[ -n "$FFMPEG_CRF" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -crf $FFMPEG_CRF"
-[ -n "$FFMPEG_AUDIO" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -c:a $FFMPEG_AUDIO"
-[ -n "$FFMPEG_AUDIO_BITRATE" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -b:a $FFMPEG_AUDIO_BITRATE"
-[ -n "$FFMPEG_AUDIO_CHANNELS" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -ac $FFMPEG_AUDIO_CHANNELS"
+if [ -z $NO_COMPRESS ]; then
+	[ -n "$FFMPEG_PRESET" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -preset $FFMPEG_PRESET"
+	[ -n "$FFMPEG_VIDEO" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -c:v $FFMPEG_VIDEO"
+	[ -n "$FFMPEG_CRF" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -crf $FFMPEG_CRF"
+	[ -n "$FFMPEG_AUDIO" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -c:a $FFMPEG_AUDIO"
+	[ -n "$FFMPEG_AUDIO_BITRATE" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -b:a $FFMPEG_AUDIO_BITRATE"
+	[ -n "$FFMPEG_AUDIO_CHANNELS" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -ac $FFMPEG_AUDIO_CHANNELS"
+fi
 
 
 
@@ -137,10 +142,10 @@ do
 	newname="${oldname%.*}.mp4"
 
 	printf "Done:\t%s\n"		"$(ls "$OUTPUT_DIR" | wc -l)"
-	printf "Remaining:\t%s\n"		"$(ls "$INPUT_DIR" | wc -l)"
+	printf "Remaining:\t%s\n"	"$(ls "$INPUT_DIR" | wc -l)"
 	printf "Start:\t%s\n"		"$(date +%F_%T)"		>> $LOGFILE
 	printf "Current file:\t%s\n"	"$oldname"			>> $LOGFILE
-	printf "Compressing video... "					>> $LOGFILE
+	printf "Processing video... "					>> $LOGFILE
 
 	if [ -n "$RATE" ]; then
 		currfps=$(ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate "$INPUT_DIR/$oldname")
@@ -163,30 +168,43 @@ do
 	printf "Done.\n"
 	printf "Done.\n" >> $LOGFILE
 
-	oldsize=$(sizeof "$INPUT_DIR/$oldname")
-	newsize=$(sizeof "$OUTPUT_DIR/$newname")
-	printf "Original file size:\t%s B\nNew file size:\t\t%s B\n" "$oldsize" "$newsize"	>> $LOGFILE
+	if [ -z $NO_COMPRESS ]; then
+		oldsize=$(sizeof "$INPUT_DIR/$oldname")
+		newsize=$(sizeof "$OUTPUT_DIR/$newname")
+		printf "Original file size:\t%s B\nNew file size:\t\t%s B\n" "$oldsize" "$newsize"	>> $LOGFILE
 
-	if [ $oldsize -le $newsize ]
-	then
-		printf "Compressing was pointless... renaming and moving original with [N], deleting compressed\n"
-		printf "%s\n" "--> [N] - removing compressed"	>> $LOGFILE
-		mv "$INPUT_DIR/$oldname" "$OUTPUT_DIR/${oldname%.*}_[N].${oldname##*.}"
-		rm "$OUTPUT_DIR/$newname"
-	else
-		if [ -n "$MTIME" ]; then
-			touch -cr "$INPUT_DIR/$oldname" "$OUTPUT_DIR/$newname"
-		fi
-		if [ -n "$DELETE" ]; then
-			printf "Compressing was useful! Renaming the new produced video with [C], deleting original\n"
-			printf "%s\n" "--> [C] - deleting original"		>> $LOGFILE
-			rm "$INPUT_DIR/$oldname"
+		if [ $oldsize -le $newsize ]
+		then
+			printf "Compressing was pointless... renaming and moving original with [N], deleting compressed\n"
+			printf "%s\n" "--> [N] - removing compressed"	>> $LOGFILE
+			mv "$INPUT_DIR/$oldname" "$OUTPUT_DIR/${oldname%.*}_[N].${oldname##*.}"
+			rm "$OUTPUT_DIR/$newname"
 		else
-			printf "Compressing was useful! Renaming the new produced video with [C], moving original\n"
-			printf "%s\n" "--> [C] - moving original"		>> $LOGFILE
-			mv "$INPUT_DIR/$oldname" "$BACKUP_DIR/"
+			if [ -n "$MTIME" ]; then
+				touch -cr "$INPUT_DIR/$oldname" "$OUTPUT_DIR/$newname"
+			fi
+			if [ -n "$DELETE" ]; then
+				printf "Compressing was useful! Renaming the new produced video with [C], deleting original\n"
+				printf "%s\n" "--> [C] - deleting original"		>> $LOGFILE
+				rm "$INPUT_DIR/$oldname"
+			else
+				printf "Compressing was useful! Renaming the new produced video with [C], moving original\n"
+				printf "%s\n" "--> [C] - moving original"		>> $LOGFILE
+				mv "$INPUT_DIR/$oldname" "$BACKUP_DIR/"
+			fi
+			mv "$OUTPUT_DIR/$newname" "$OUTPUT_DIR/${newname%.mp4}_[C].mp4"
 		fi
-		mv "$OUTPUT_DIR/$newname" "$OUTPUT_DIR/${newname%.mp4}_[C].mp4"
+	else
+			if [ -n "$DELETE" ]; then
+				printf "Renaming the new produced video with [P], deleting original\n"
+				printf "%s\n" "--> [P] - deleting original"		>> $LOGFILE
+				rm "$INPUT_DIR/$oldname"
+			else
+				printf "Renaming the new produced video with [P], moving original\n"
+				printf "%s\n" "--> [P] - moving original"		>> $LOGFILE
+				mv "$INPUT_DIR/$oldname" "$BACKUP_DIR/"
+			fi
+			mv "$OUTPUT_DIR/$newname" "$OUTPUT_DIR/${newname%.mp4}_[P].mp4"
 	fi
 
 	printf "Work done for $newname\n\n"
