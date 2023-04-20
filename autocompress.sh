@@ -11,6 +11,9 @@ FFMPEG_AUDIO=aac
 FFMPEG_AUDIO_BITRATE=64k
 FFMPEG_AUDIO_CHANNELS=1
 
+NVIDIA_FFMPEG_PRESET=slow
+NVIDIA_FFMPEG_EXTRA_OPTIONS="-rc constqp -qp 31"
+
 command -v ffmpeg-bar >/dev/null && FFMPEG_COMMAND=ffmpeg-bar || FFMPEG_COMMAND=ffmpeg
 
 LOGFILE=~/.local/share/autocompress.log
@@ -30,6 +33,7 @@ OPTIONS:
 -i, --input DIR			Input directory (default: $INPUT_DIR)
 -b, --backup DIR		Move the originals in this location (default: $BACKUP_DIR,
 				overridden by -d)
+-n, --nvidia			Use Nvidia hardware acceleration
 -c, --crop			Try to crop black borders (based on the first seconds)
 -t, --mtime			Adjust mtime output to match original
 -r RATE, --rate RATE		Lower the framerate to RATE if convenient
@@ -49,8 +53,8 @@ sizeof() {
 }
 
 
-OPTS=o:i:b:ctr:da:h
-LONGOPTS=output:,input:,backup:,crop,mtime,rate:,delete,after,help,no-compress
+OPTS=o:i:b:nctr:da:h
+LONGOPTS=output:,input:,backup:,nvidia,crop,mtime,rate:,delete,after,help,no-compress
 PARSED=$(getopt --options=$OPTS --longoptions=$LONGOPTS --name "$0" -- "$@")
 eval set -- "$PARSED"
 
@@ -68,6 +72,9 @@ do
 		-b|--backup)
 			BACKUP_DIR="$2"
 			shift
+			;;
+		-n|--nvidia)
+			NVIDIA=true
 			;;
 		-c|--crop)
 			CROP=true
@@ -125,6 +132,12 @@ if [ -n "$OPT_AFTER" ]; then
 	esac
 fi
 
+if [ -n "$NVIDIA" ]; then
+	FFMPEG_VIDEO=hevc_nvenc
+	[ -n "$NVIDIA_FFMPEG_PRESET" ] && FFMPEG_PRESET="$NVIDIA_FFMPEG_PRESET"
+	[ -n "$NVIDIA_FFMPEG_EXTRA_OPTIONS" ] && FFMPEG_EXTRA_OPTIONS="$NVIDIA_FFMPEG_EXTRA_OPTIONS"
+	FFMPEG_CRF=
+fi
 
 if [ -z $NO_COMPRESS ]; then
 	[ -n "$FFMPEG_PRESET" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -preset $FFMPEG_PRESET"
@@ -133,6 +146,7 @@ if [ -z $NO_COMPRESS ]; then
 	[ -n "$FFMPEG_AUDIO" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -c:a $FFMPEG_AUDIO"
 	[ -n "$FFMPEG_AUDIO_BITRATE" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -b:a $FFMPEG_AUDIO_BITRATE"
 	[ -n "$FFMPEG_AUDIO_CHANNELS" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS -ac $FFMPEG_AUDIO_CHANNELS"
+	[ -n "$FFMPEG_EXTRA_OPTIONS" ] && FFMPEG_OPTIONS="$FFMPEG_OPTIONS $FFMPEG_EXTRA_OPTIONS"
 fi
 
 
