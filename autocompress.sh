@@ -163,6 +163,7 @@ do
 		fi
 	fi
 
+	echo "$FFMPEG_COMMAND -y -i \"$INPUT_DIR/$oldname\" $FFMPEG_OPTIONS \"$OUTPUT_DIR/$newname\""
 	eval "$FFMPEG_COMMAND -y -i \"$INPUT_DIR/$oldname\" $FFMPEG_OPTIONS \"$OUTPUT_DIR/$newname\""
 
 	printf "Done.\n"
